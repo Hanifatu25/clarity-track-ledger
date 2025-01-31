@@ -1,5 +1,6 @@
 ;; TrackLedger - Supply Chain Tracking Contract
 (define-data-var last-item-id uint u0)
+(define-data-var last-batch-id uint u0)
 
 ;; Define item status values
 (define-constant STATUS-CREATED u1)
@@ -10,6 +11,7 @@
 (define-constant err-not-found (err u404))
 (define-constant err-unauthorized (err u401))
 (define-constant err-invalid-status (err u400))
+(define-constant err-empty-batch (err u402))
 
 ;; Item structure
 (define-map items
@@ -19,6 +21,17 @@
         manufacturer: principal,
         status: uint,
         metadata: (string-utf8 256),
+        created-at: uint,
+        batch-id: (optional uint)
+    }
+)
+
+;; Batch structure
+(define-map batches
+    {batch-id: uint}
+    {
+        owner: principal,
+        items: (list 50 uint),
         created-at: uint
     }
 )
@@ -48,12 +61,47 @@
                     manufacturer: tx-sender,
                     status: STATUS-CREATED,
                     metadata: metadata,
-                    created-at: block-height
+                    created-at: block-height,
+                    batch-id: none
                 }
             )
             (var-set last-item-id new-item-id)
             (record-event new-item-id "CREATED" metadata)
             (ok new-item-id)
+        )
+    )
+)
+
+;; Create new batch of items
+(define-public (create-batch (item-ids (list 50 uint)))
+    (let 
+        ((new-batch-id (+ (var-get last-batch-id) u1)))
+        (if (> (len item-ids) u0)
+            (begin
+                (map-set batches
+                    {batch-id: new-batch-id}
+                    {
+                        owner: tx-sender,
+                        items: item-ids,
+                        created-at: block-height
+                    }
+                )
+                (var-set last-batch-id new-batch-id)
+                ;; Update batch-id for all items
+                (map update-item-batch-id (map to-uint item-ids))
+                (ok new-batch-id)
+            )
+            err-empty-batch
+        )
+    )
+)
+
+;; Helper to update item batch-id
+(define-private (update-item-batch-id (item-id uint))
+    (let ((item (unwrap! (get-item item-id) false)))
+        (map-set items
+            {item-id: item-id}
+            (merge item {batch-id: (some (var-get last-batch-id))})
         )
     )
 )
@@ -119,6 +167,11 @@
 ;; Getter for item details
 (define-read-only (get-item (item-id uint))
     (map-get? items {item-id: item-id})
+)
+
+;; Get batch details
+(define-read-only (get-batch (batch-id uint))
+    (map-get? batches {batch-id: batch-id})
 )
 
 ;; Get event details

@@ -36,6 +36,43 @@ Clarinet.test({
 });
 
 Clarinet.test({
+  name: "Can create and manage item batches",
+  async fn(chain: Chain, accounts: Map<string, Account>) {
+    const deployer = accounts.get('deployer')!;
+    
+    // Create multiple items
+    let block = chain.mineBlock([
+      Tx.contractCall('track-ledger', 'create-item', [
+        types.utf8("Item 1")
+      ], deployer.address),
+      Tx.contractCall('track-ledger', 'create-item', [
+        types.utf8("Item 2")
+      ], deployer.address)
+    ]);
+    
+    // Create batch with items
+    let batchBlock = chain.mineBlock([
+      Tx.contractCall('track-ledger', 'create-batch', [
+        types.list([types.uint(1), types.uint(2)])
+      ], deployer.address)
+    ]);
+    
+    batchBlock.receipts[0].result.expectOk().expectUint(1);
+    
+    // Verify batch details
+    let verifyBlock = chain.mineBlock([
+      Tx.contractCall('track-ledger', 'get-batch', [
+        types.uint(1)
+      ], deployer.address)
+    ]);
+    
+    const batchData = verifyBlock.receipts[0].result.expectSome();
+    assertEquals(batchData.owner, deployer.address);
+    assertEquals(batchData.items.length, 2);
+  }
+});
+
+Clarinet.test({
   name: "Can transfer ownership of item",
   async fn(chain: Chain, accounts: Map<string, Account>) {
     const deployer = accounts.get('deployer')!;
